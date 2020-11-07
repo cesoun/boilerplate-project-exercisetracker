@@ -107,8 +107,8 @@ router.get('/log', async (req, res) => {
 			username: user.username
 		};
 
-		if (from || to) 
-			selector.date = {}
+		if (from || to)
+			selector.date = {};
 
 		// if we have a from date, add it to the $gte query.
 		if (from)
