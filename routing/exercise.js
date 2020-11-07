@@ -7,7 +7,7 @@ const Exercise = require('../models/exercise');
 const _ = require('lodash');
 
 router.post('/new-user', async (req, res, next) => {
-	const username = req.body.username.trim();
+	const username = req.body.username;
 
 	// check username is supplied.
 	if (!username)
@@ -15,7 +15,7 @@ router.post('/new-user', async (req, res, next) => {
 
 	await User.create({username: username}, (err, user) => {
 		if (err)
-			return res.status(404).json({error: 'username already taken'});
+			return res.status(404).json(err);
 
 		// lodash omit the version. I know there is a way to pass in Schema.find({}, '-__v', cb);
 		return res.json(_.omit(user.toObject(), ['__v']));
@@ -27,12 +27,13 @@ router.post('/add', async (req, res) => {
 	const {userId, description, duration, date} = req.body;
 
 	// Check inputs.
-	if (!userId.trim() || !description || !duration.trim())
+	if (!userId || !description || !duration)
 		return res.status(404).json({error: 'Missing required field(s)'});
 
 	// Ensure number.
-	if (!parseInt(duration.trim()))
+	if (duration && !parseInt(duration.trim()))
 		return res.status(404).json({error: 'duration needs to be a number'});
+
 
 	// setup the exercise document we plan to create.
 	let exercise = {
@@ -42,13 +43,16 @@ router.post('/add', async (req, res) => {
 		description: description
 	};
 
+
 	// find the user by the supplied id.
-	await User.findById(userId.trim(), async (err, user) => {
+	await User.findById(userId.trim(), '-__v', async (err, user) => {
 		if (err)
 			return res.status(404).json({error: err});
 
+
 		if (!user)
 			return res.status(404).json({error: `No user found for: ${userId}`});
+
 
 		// update the object with the user.username.
 		exercise.username = user.username;
@@ -62,8 +66,14 @@ router.post('/add', async (req, res) => {
 			doc = _.omit(doc.toObject(), ['__v']);
 			doc.date = doc.date.toDateString();
 
+			user = user.toObject();
+
+			user.date = doc.date;
+			user.duration = doc.duration;
+			user.description = doc.description;
+
 			// return the created exercise.
-			return res.json(doc);
+			return res.json(user);
 		});
 	});
 });
@@ -85,7 +95,7 @@ router.get('/log', async (req, res) => {
 		return res.send({status: 404, message: 'userId is REQUIRED'});
 
 	// check if that user it in the database.
-	await User.findById(userId, async (err, user) => {
+	await User.findById(userId, '-__v', async (err, user) => {
 		if (err)
 			return res.status(404).json({error: err});
 
@@ -94,9 +104,11 @@ router.get('/log', async (req, res) => {
 
 		// Setup the selector object.
 		let selector = {
-			username: user.username,
-			date: {}
+			username: user.username
 		};
+
+		if (from || to) 
+			selector.date = {}
 
 		// if we have a from date, add it to the $gte query.
 		if (from)
@@ -107,11 +119,20 @@ router.get('/log', async (req, res) => {
 			selector.date.$lte = Date.parse(to);
 
 		// get all the exercises for this user.
-		await Exercise.find(selector, (err, docs) => {
+		await Exercise.find(selector, '-_id -username -__v', (err, docs) => {
 			if (err)
 				return res.status(404).json({error: err});
 
-			return res.json(docs);
+			user = user.toObject();
+
+			user.count = docs.length;
+			user.log = docs.map(doc => {
+				doc = doc.toObject();
+				doc.date = doc.date.toDateString();
+				return doc;
+			});
+
+			return res.json(user);
 		})
 			// apply the limit.
 			.limit(parseInt(limit));
